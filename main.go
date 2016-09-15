@@ -6,23 +6,36 @@ import (
 	"syscall"
 )
 
+type ApplicationManager struct {
+	SignalChannel chan os.Signal
+}
+
 type Application interface {
-	Startup()
-	SetStopRequestCallback(stopCallback Callback)
+	Startup() error
 	Run()
-	Shutdown()
+	Shutdown() error
 }
 
 type Callback func()
 
-func RunApplication(a Application) {
-	a.Startup()
+func NewApplicationManager() *ApplicationManager {
+	am := ApplicationManager{}
+	am.SignalChannel = make(chan os.Signal, 1)
+	return &am
+}
+
+func (am *ApplicationManager) StopApplication() {
+	close(am.SignalChannel)
+}
+
+func (am *ApplicationManager) RunApplication(a Application) error {
+	err := a.Startup()
+	if err != nil {
+		return err
+	}
 	go a.Run()
 	//sigchan := a.GetSignalChannel()
-	sigchan := make(chan os.Signal, 1)
-	a.SetStopRequestCallback(func() {
-		close(sigchan)
-	})
+	sigchan := am.SignalChannel
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL, os.Interrupt, os.Kill)
 	for {
 		sig, success := <-sigchan
@@ -35,5 +48,5 @@ func RunApplication(a Application) {
 			break
 		}
 	}
-	a.Shutdown()
+	return a.Shutdown()
 }
